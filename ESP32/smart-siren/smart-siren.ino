@@ -136,6 +136,130 @@ void logActivity(String message, String type) {
   file.close();
 }
 
+// Add these handler functions ABOVE your setupServer() function
+
+void handleStatus(AsyncWebServerRequest *request) {
+  DynamicJsonDocument doc(512);
+  
+  // WiFi status
+  doc["wifi"]["connected"] = WiFi.status() == WL_CONNECTED;
+  doc["wifi"]["ssid"] = WiFi.SSID();
+  doc["wifi"]["rssi"] = WiFi.RSSI();
+  doc["wifi"]["ip"] = WiFi.localIP().toString();
+
+  // Hardware status
+  File statusFile = SPIFFS.open("/data/status.json", "r");
+  if(statusFile) {
+    DynamicJsonDocument statusDoc(256);
+    deserializeJson(statusDoc, statusFile);
+    doc["siren"] = statusDoc["siren"];
+    doc["bell"] = statusDoc["bell"];
+    statusFile.close();
+  }
+
+  // System info
+  doc["system"]["uptime"] = millis() / 1000;
+  doc["system"]["freeHeap"] = ESP.getFreeHeap();
+
+  String jsonResponse;
+  serializeJson(doc, jsonResponse);
+  request->send(200, "application/json", jsonResponse);
+}
+
+void handleGetAlarms(AsyncWebServerRequest *request) {
+  File file = SPIFFS.open("/data/alarms.json", "r");
+  if(!file) {
+    request->send(500, "text/plain", "Error reading alarms");
+    return;
+  }
+  
+  request->send(200, "application/json", file.readString());
+  file.close();
+}
+
+void handleAddAlarm(AsyncWebServerRequest *request) {
+  String body = getRequestBody(request);
+  
+  File file = SPIFFS.open("/data/alarms.json", "r+");
+  DynamicJsonDocument doc(1024);
+  
+  if(file.size() > 0) {
+    deserializeJson(doc, file);
+  }
+  file.close();
+
+  DynamicJsonDocument newAlarm(256);
+  deserializeJson(newAlarm, body);
+  
+  // Generate ID
+  int newId = 1;
+  for(JsonObject alarm : doc["alarms"].as<JsonArray>()) {
+    if(alarm["id"] >= newId) newId = alarm["id"].as<int>() + 1;
+  }
+  newAlarm["id"] = newId;
+  
+  doc["alarms"].add(newAlarm);
+  
+  file = SPIFFS.open("/data/alarms.json", "w");
+  serializeJson(doc, file);
+  file.close();
+  
+  request->send(200, "application/json", "{\"success\":true}");
+}
+
+void handleRingSiren(AsyncWebServerRequest *request) {
+  triggerSiren();
+  request->send(200, "text/plain", "Siren activated");
+}
+
+void handleRingBell(AsyncWebServerRequest *request) {
+  triggerBell();
+  request->send(200, "text/plain", "Bell activated");
+}
+
+void handleGetLogs(AsyncWebServerRequest *request) {
+  File file = SPIFFS.open("/data/logs.json", "r");
+  if(!file) {
+    request->send(500, "text/plain", "Error reading logs");
+    return;
+  }
+  
+  request->send(200, "application/json", file.readString());
+  file.close();
+}
+
+// Utility function to get request body
+String getRequestBody(AsyncWebServerRequest *request) {
+  String body;
+  if(request->hasParam("body", true)) {
+    body = request->getParam("body", true)->value();
+  } else if(request->hasHeader("Content-Type") && 
+            request->header("Content-Type") == "application/json") {
+    AsyncWebParameter* p = request->getParam(0);
+    if(p) body = p->value();
+  }
+  return body;
+}
+
+void setupServer() {
+  // Serve static files
+  server.serveStatic("/", SPIFFS, "/www/").setDefaultFile("index.html");
+
+  // API Endpoints
+  server.on("/api/login", HTTP_POST, handleLogin);
+  server.on("/api/status", HTTP_GET, handleStatus);
+  server.on("/api/alarms", HTTP_GET, handleGetAlarms);
+  server.on("/api/alarms", HTTP_POST, handleAddAlarm);
+  server.on("/api/ring-siren", HTTP_POST, handleRingSiren);
+  server.on("/api/ring-bell", HTTP_POST, handleRingBell);
+  server.on("/api/logs", HTTP_GET, handleGetLogs);
+
+  // WebSocket for real-time updates
+  server.on("/ws", HTTP_GET, [](AsyncWebServerRequest *request){
+    // WebSocket upgrade handled automatically
+  });
+}
+
 void setupServer() {
   // Serve static files
   server.serveStatic("/", SPIFFS, "/www/").setDefaultFile("index.html");
