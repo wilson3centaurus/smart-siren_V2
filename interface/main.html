@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rusununguko ZIMFEP Smart Siren System</title>
+    <link rel="stylesheet" href="/styles/main.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <div class="container header-content">
+            <div class="logo-container">
+                <div class="logo">
+                    <!-- Placeholder for Rusununguko ZIMFEP High logo -->
+                    <img src="/api/placeholder/60/60" alt="Rusununguko ZIMFEP High Logo">
+                </div>
+                <div class="school-name">
+                    <h1>Rusununguko ZIMFEP High School</h1>
+                    <p>Smart Siren System</p>
+                </div>
+            </div>
+            <div class="auth-info">
+                <div class="user-info">
+                    <div class="username">John Doe</div>
+                    <div class="role">Super Admin</div>
+                </div>
+                <button class="logout-btn">Logout</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="current-time" id="current-time">14:25:36</div>
+        <div class="current-date" id="current-date">Thursday, May 15, 2025</div>
+
+        <div class="dashboard">
+            <div class="panel">
+                <h2>Quick Actions</h2>
+                <div class="quick-actions">
+                    <button class="action-btn" id="ring-now">
+                        <span class="material-icons">notifications_active</span>
+                        Ring Siren Now
+                    </button>
+                    <button class="action-btn" id="ring-bell">
+                        <span class="material-icons">restaurant</span>
+                        Ring Bell Now
+                    </button>
+                    <button class="action-btn emergency" id="emergency-alarm">
+                        <span class="material-icons">warning</span>
+                        Emergency Alarm
+                    </button>
+                </div>
+
+                <h2>System Status</h2>
+                <div class="stats-grid">
+                    <div class="stat-card success">
+                        <div class="stat-header">
+                            <div class="stat-icon success">
+                                <span class="material-icons">wifi</span>
+                            </div>
+                            <div class="stat-title">WiFi Connection</div>
+                        </div>
+                        <div class="stat-value">Connected</div>
+                        <div class="stat-description">Signal: Excellent (Rusununguko_WiFi)</div>
+                    </div>
+
+                    <div class="stat-card info">
+                        <div class="stat-header">
+                            <div class="stat-icon info">
+                                <span class="material-icons">power</span>
+                            </div>
+                            <div class="stat-title">Power Status</div>
+                        </div>
+                        <div class="stat-value">Main Power</div>
+                        <div class="stat-description">Battery: 100% (Backup Ready)</div>
+                    </div>
+
+                    <div class="stat-card success">
+                        <div class="stat-header">
+                            <div class="stat-icon success">
+                                <span class="material-icons">speaker</span>
+                            </div>
+                            <div class="stat-title">Siren Status</div>
+                        </div>
+                        <div class="stat-value">Operational</div>
+                        <div class="stat-description">Last test: Today 07:00 AM</div>
+                    </div>
+
+                    <div class="stat-card warning">
+                        <div class="stat-header">
+                            <div class="stat-icon warning">
+                                <span class="material-icons">schedule</span>
+                            </div>
+                            <div class="stat-title">Bell Status</div>
+                        </div>
+                        <div class="stat-value">Needs Check</div>
+                        <div class="stat-description">Last ring: Yesterday 06:00 PM</div>
+                    </div>
+                </div>
+
+                <div class="next-alarm">
+                    <div class="next-alarm-header">
+                        <div class="next-alarm-icon">
+                            <span class="material-icons">alarm</span>
+                        </div>
+                        <div class="next-alarm-title">Next Scheduled Alarm</div>
+                    </div>
+                    <div class="next-alarm-details">
+                        <div>
+                            <div class="schedule-info">
+                                <h3>Lunch Time</h3>
+                                <div class="schedule-time">12:30 PM</div>
+                            </div>
+                        </div>
+                        <div class="next-alarm-type">Siren</div>
+                    </div>
+                </div>
+
+                <div class="system-logs">
+                    <h3 style="margin-top: 20px; margin-bottom: 10px;">Recent Activity</h3>
+                    <div class="log-entry">
+                        <div class="log-time">14:20</div>
+                        <div class="log-message">
+                            <span class="log-type info">INFO:</span> System check completed
+                        </div>
+                    </div>
+                    <div class="log-entry">
+                        <div class="log-time">12:30</div>
+                        <div class="log-message">
+                            <span class="log-type info">INFO:</span> Lunch siren activated automatically
+                        </div>
+                    </div>
+                    <div class="log-entry">
+                        <div class="log-time">10:30</div>
+                        <div class="log-message">
+                            <span class="log-type info">INFO:</span> Break time siren activated
+                        </div>
+                    </div>
+                    <div class="log-entry">
+                        <div class="log-time">09:45</div>
+                        <div class="log-message">
+                            <span class="log-type warning">WARNING:</span> Bell volume lower than usual
+                        </div>
+                    </div>
+                    <div class="log-entry">
+                        <div class="log-time">07:00</div>
+                        <div class="log-message">
+                            <span class="log-type info">INFO:</span> Morning assembly siren activated
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <h2>All Scheduled Alarms</h2>
+                <div class="schedules-list">
+                    <div class="schedule-item">
+                        <div class="schedule-info">
+                            <h3>Morning Assembly</h3>
+                            <div class="schedule-time">06:30 AM</div>
+                            <div class="schedule-days">Mon, Tue, Wed, Thu, Fri</div>
+                        </div>
+                        <div class="schedule-actions">
+                            <button class="btn btn-edit">Edit</button>
+                            <button class="btn btn-delete">Delete</button>
+                        </div>
+                    </div>
+                    <div class="schedule-item">
+                        <div class="schedule-info">
+                            <h3>First Period</h3>
+                            <div class="schedule-time">07:00 AM</div>
+                            <div class="schedule-days">Mon, Tue, Wed, Thu, Fri</div>
+                        </div>
+                        <div class="schedule-actions">
+                            <button class="btn btn-edit">Edit</button>
+                            <button class="btn btn-delete">Delete</button>
+                        </div>
+                    </div>
+                    <div class="schedule-item">
+                        <div class="schedule-info">
+                            <h3>Second Period</h3>
+                            <div class="schedule-time">08:00 AM</div>
+                            <div class="schedule-days">Mon, Tue, Wed, Thu, Fri</div>
+                        </div>
+                        <div class="schedule-actions">
+                            <button class="btn btn-edit">Edit</button>
+                            <button class="btn btn-delete">Delete</button>
+                        </div>
+                    </div>
+                    <div class="schedule-item">
+                        <div class="schedule-info">
+                            <h3>Third Period</h3>
+                            <div class="schedule-time">09:00 AM</div>
+                            <div class="schedule-days">Mon, Tue, Wed, Thu, Fri</div>
+                        </div>
+                        <div class="schedule-actions">
+                            <button class="btn btn-edit">Edit</button>
+                            <button class="btn btn-delete">Delete</button>
+                        </div>
+                    </div>
+                    <div class="schedule-item">
+                        <div class="schedule-info">
+                            <h3>Break Time</h3>
+                            <div class="schedule-time">10:30 AM</div>
+                            <div class="schedule-days">Mon, Tue, Wed, Thu, Fri</div>
+                        </div>
+                        <div class="schedule-actions">
+                            <button class="btn btn-edit">Edit</button>
+                            <button class="btn btn-delete">Delete</button>
+                        </div>
+                    </div>
+                    <div class="schedule-item">
+                        <div class="schedule-info">
+                            <h3>Fourth Period</h3>
+                            <div class="schedule-time">11:00 AM</div>
+                            <div class="schedule-days">Mon, Tue, Wed, Thu, Fri</div>
+                        </div>
+                        <div class="schedule-actions">
+                            <button class="btn btn-edit">Edit</button>
+                            <button class="btn btn-delete">Delete</button>
+                        </div>
+                    </div>
+                    <div class="schedule-item">
+                        <div class="schedule-info">
+                            <h3>Lunch Time</h3>
+                            <div class="schedule-time">12:30 PM</div>
+                            <div class="schedule-days">Mon, Tue, Wed, Thu, Fri, Sat, Sun</div>
+                        </div>
+                        <div class="schedule-actions">
+                            <button class="btn btn-edit">Edit</button>
+                            <button class="btn btn-delete">Delete</button>
+                        </div>
+                    </div>
+                    <div class="schedule-item">
+                        <div class="schedule-info">
+                            <h3>Fifth Period</h3>
+                            <div class="schedule-time">02:00 PM</div>
+                            <div class="schedule-days">Mon, Tue, Wed, Thu, Fri</div>
+                        </div>
+                        <div class="schedule-actions">
+                            <button class="btn btn-edit">Edit</button>
+                            <button class="btn btn-delete">Delete</button>
+                        </div>
+                    </div>
+                    <div class="schedule-item">
+                        <div class="schedule-info">
+                            <h3>Supper Time</h3>
+                            <div class="schedule-time">06:00 PM</div>
+                            <div class="schedule-days">Mon, Tue, Wed, Thu, Fri, Sat, Sun</div>
+                        </div>
+                        <div class="schedule-actions">
+                            <button class="btn btn-edit">Edit</button>
+                            <button class="btn btn-delete">Delete</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="add-new">
+                    <button class="btn-add" id="add-schedule">
+                        <span class="material-icons">add</span>
+                        Add New Schedule
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Add/Edit Schedule Modal -->
+    <div class="modal" id="schedule-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Add New Schedule</h2>
+                <button class="close-modal">&times;</button>
+            </div>
+            <form id="schedule-form">
+                <div class="form-group">
+                    <label for="schedule-name">Schedule Name</label>
+                    <input type="text" id="schedule-name" class="form-control" placeholder="e.g. Morning Assembly, Lunch Time">
+                </div>
+                <div class="form-group">
+                    <label for="schedule-time">Time</label>
+                    <input type="time" id="schedule-time" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label for="alarm-type">Alarm Type</label>
+                    <select id="alarm-type" class="form-control">
+                        <option value="siren">School Siren</option>
+                        <option value="bell">Dining Hall Bell</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Days</label>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="days" value="Mon"> Mon
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="days" value="Tue"> Tue
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="days" value="Wed"> Wed
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="days" value="Thu"> Thu
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="days" value="Fri"> Fri
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="days" value="Sat"> Sat
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="days" value="Sun"> Sun
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-cancel">Cancel</button>
+                    <button type="submit" class="btn btn-save">Save Schedule</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <script src="/scripts/backend.js"></script>
+    <script src="/scripts/main.js"></script>
+</body>
+</html>
