@@ -1,357 +1,593 @@
+/*
+ * Smart Siren System V2 for Rusununguko ZIMFEP High School
+ * Author: Claude
+ * Date: May 16, 2025
+ * 
+ * This code runs on an ESP32 and provides:
+ * - WiFi connectivity
+ * - Web server with REST API
+ * - NTP time synchronization
+ * - Scheduled siren/bell control
+ * - Manual remote triggering
+ * - Persistent alarm storage
+ */
+
 #include <WiFi.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <SPIFFS.h>
+#include <AsyncJson.h>
 #include <ArduinoJson.h>
-#include <TimeLib.h>
+#include <SPIFFS.h>
+#include <Preferences.h>
+#include <time.h>
 
+// ===== CONFIGURATION =====
+
+// WiFi credentials
+const char* WIFI_SSID = "Rusununguko_WiFi";     // Replace with school WiFi SSID
+const char* WIFI_PASSWORD = "YourWiFiPassword"; // Replace with school WiFi password
+
+// Time configuration
+const char* NTP_SERVER = "pool.ntp.org";
+const long  GMT_OFFSET_SEC = 7200;      // Zimbabwe is GMT+2 (7200 seconds)
+const int   DAYLIGHT_OFFSET_SEC = 0;    // No DST
+
+// Pin definitions
+const int SIREN_PIN = 23;               // School siren output pin
+const int BELL_PIN = 22;                // Dining hall bell output pin
+const int STATUS_LED_PIN = 2;           // Built-in status LED
+
+// Default durations
+const int DEFAULT_SIREN_DURATION = 5000;    // Default siren duration (ms)
+const int DEFAULT_BELL_DURATION = 3000;     // Default bell duration (ms)
+
+// ===== GLOBAL VARIABLES =====
+
+// Server instance
 AsyncWebServer server(80);
-const char* ssid = "Digital";
-const char* password = "12345678";
 
-// Hardware pins
-#define BUZZER_PIN 23
-#define LED_WIFI 2
-#define LED_SIREN 4
-#define LED_BELL 5
+// For storing alarm settings
+Preferences preferences;
+
+// Time tracking
+struct tm timeinfo;
+bool timeSet = false;
+unsigned long lastTimeCheck = 0;
+const unsigned long TIME_CHECK_INTERVAL = 60000; // Check time every minute
+
+// Alarm structure
+struct Alarm {
+  String name;
+  int hour;
+  int minute;
+  uint8_t days;    // Bit field: bit 0 = Monday, bit 1 = Tuesday, etc.
+  int type;        // 0 = siren, 1 = bell
+  bool enabled;
+};
+
+// Alarm list
+std::vector<Alarm> alarms;
+
+// ===== FUNCTION DECLARATIONS =====
+void connectToWiFi();
+void setupServer();
+void setupTime();
+void loadAlarms();
+void saveAlarms();
+void checkAlarms();
+void blinkLED(int times);
+void triggerSiren(int duration);
+void triggerBell(int duration);
+String getTimeString();
+String getDayOfWeek(int day);
+String getFormattedTime(int hour, int minute);
+String generateTokenForUser(String username);
+bool validateToken(String token);
+void logMessage(String message);
+
+// ===== SETUP =====
 
 void setup() {
+  // Initialize serial communication
   Serial.begin(115200);
-  while(!Serial); // Wait for serial port to connect
+  Serial.println("\n\n===== Smart Siren System V2 =====");
   
-  pinMode(BUZZER_PIN, OUTPUT);
-  pinMode(LED_WIFI, OUTPUT);
-  pinMode(LED_SIREN, OUTPUT);
-  pinMode(LED_BELL, OUTPUT);
-
-  // Initialize SPIFFS with error handling
-  if(!SPIFFS.begin(true)){
-    Serial.println("SPIFFS Mount Failed");
-    while(1) delay(1000); // Halt if filesystem fails
+  // Configure pins
+  pinMode(SIREN_PIN, OUTPUT);
+  pinMode(BELL_PIN, OUTPUT);
+  pinMode(STATUS_LED_PIN, OUTPUT);
+  
+  // Turn off outputs initially
+  digitalWrite(SIREN_PIN, LOW);
+  digitalWrite(BELL_PIN, LOW);
+  
+  // Initialize SPIFFS file system for web interface files
+  if (!SPIFFS.begin(true)) {
+    Serial.println("ERROR: SPIFFS mount failed");
+  } else {
+    Serial.println("SPIFFS mounted successfully");
   }
-
-  // Initialize data files if they don't exist
-  initializeDataFiles();
-
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi");
-  while(WiFi.status() != WL_CONNECTED){
-    delay(500);
-    Serial.print(".");
-  }
-  digitalWrite(LED_WIFI, HIGH);
-  Serial.println("\nWiFi connected");
-  Serial.println("IP address: " + WiFi.localIP().toString());
-
-  // Configure time with error handling
-  configTime(0, 0, "pool.ntp.org");
-  Serial.println("Waiting for NTP time sync");
-  time_t now = time(nullptr);
-  while(now < 24*3600){
-    delay(100);
-    now = time(nullptr);
-  }
-
+  
+  // Initialize preferences (non-volatile storage)
+  preferences.begin("smart-siren", false);
+  
+  // Connect to WiFi
+  connectToWiFi();
+  
+  // Setup time synchronization
+  setupTime();
+  
+  // Load saved alarms
+  loadAlarms();
+  
+  // Configure web server
   setupServer();
+  
+  // Start the server
   server.begin();
-  Serial.println("HTTP server started");
+  Serial.println("Web server started");
+  
+  // Indicate successful setup
+  blinkLED(3);
+  Serial.println("Setup complete. System running.");
 }
 
-void initializeDataFiles() {
-  // Create required directories
-  if(!SPIFFS.exists("/data")){
-    SPIFFS.mkdir("/data");
-  }
-
-  // Initialize users.json if it doesn't exist
-  if(!SPIFFS.exists("/data/users.json")){
-    File file = SPIFFS.open("/data/users.json", "w");
-    if(file){
-      file.println("{\"users\":[{\"username\":\"admin\",\"password\":\"admin\",\"role\":\"admin\"}]}");
-      file.close();
-    }
-  }
-
-  // Initialize alarms.json if it doesn't exist
-  if(!SPIFFS.exists("/data/alarms.json")){
-    File file = SPIFFS.open("/data/alarms.json", "w");
-    if(file){
-      file.println("{\"alarms\":[]}");
-      file.close();
-    }
-  }
-
-  // Initialize status.json if it doesn't exist
-  if(!SPIFFS.exists("/data/status.json")){
-    File file = SPIFFS.open("/data/status.json", "w");
-    if(file){
-      file.println("{\"siren\":{\"status\":\"inactive\",\"lastTriggered\":0},\"bell\":{\"status\":\"inactive\",\"lastTriggered\":0}}");
-      file.close();
-    }
-  }
-
-  // Initialize logs.json if it doesn't exist
-  if(!SPIFFS.exists("/data/logs.json")){
-    File file = SPIFFS.open("/data/logs.json", "w");
-    if(file){
-      file.println("{\"logs\":[]}");
-      file.close();
-    }
-  }
-}
-
-// [Rest of your existing functions remain the same until getRequestBody]
-
-String getRequestBody(AsyncWebServerRequest *request) {
-  if(!request) return String();
-  
-  // Check for plain text body
-  if(request->hasParam("plain", true)){
-    AsyncWebParameter* p = request->getParam("plain", true);
-    if(p) return p->value();
-  }
-  
-  // Check for form data
-  if(request->hasParam("body", true)){
-    AsyncWebParameter* p = request->getParam("body", true);
-    if(p) return p->value();
-  }
-  
-  return String();
-}
-
-// [Rest of your existing code continues...]
+// ===== MAIN LOOP =====
 
 void loop() {
-  checkAlarms();
-  delay(1000);
+  // Check WiFi connection and reconnect if needed
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi connection lost. Reconnecting...");
+    connectToWiFi();
+  }
+  
+  // Update time periodically and check alarms
+  unsigned long currentMillis = millis();
+  if (currentMillis - lastTimeCheck >= TIME_CHECK_INTERVAL) {
+    lastTimeCheck = currentMillis;
+    
+    if (!getLocalTime(&timeinfo)) {
+      Serial.println("ERROR: Failed to obtain time");
+      timeSet = false;
+    } else {
+      timeSet = true;
+      Serial.print("Current time: ");
+      Serial.println(getTimeString());
+      
+      // Check if any alarms should be triggered
+      checkAlarms();
+    }
+  }
+  
+  // Small delay to prevent hogging CPU
+  delay(10);
+}
+
+// ===== WIFI FUNCTIONS =====
+
+void connectToWiFi() {
+  Serial.print("Connecting to WiFi...");
+  
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  
+  // Wait for connection with timeout
+  int timeout = 0;
+  while (WiFi.status() != WL_CONNECTED && timeout < 20) {
+    delay(500);
+    Serial.print(".");
+    digitalWrite(STATUS_LED_PIN, !digitalRead(STATUS_LED_PIN)); // Blink while connecting
+    timeout++;
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi connected successfully!");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+    digitalWrite(STATUS_LED_PIN, HIGH); // LED on when connected
+  } else {
+    Serial.println("\nWiFi connection failed!");
+    digitalWrite(STATUS_LED_PIN, LOW);  // LED off when disconnected
+  }
+}
+
+// ===== TIME FUNCTIONS =====
+
+void setupTime() {
+  Serial.println("Configuring time...");
+  configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER);
+  
+  // Try to get time
+  if (!getLocalTime(&timeinfo)) {
+    Serial.println("ERROR: Failed to obtain time");
+    timeSet = false;
+  } else {
+    timeSet = true;
+    Serial.print("Current time: ");
+    Serial.println(getTimeString());
+  }
+}
+
+String getTimeString() {
+  char timeStringBuff[50];
+  strftime(timeStringBuff, sizeof(timeStringBuff), "%A, %B %d %Y %H:%M:%S", &timeinfo);
+  return String(timeStringBuff);
+}
+
+String getFormattedTime(int hour, int minute) {
+  char buffer[6];
+  sprintf(buffer, "%02d:%02d", hour, minute);
+  return String(buffer);
+}
+
+String getDayOfWeek(int day) {
+  const char* days[] = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+  if (day >= 0 && day < 7) {
+    return days[day];
+  }
+  return "Unknown";
+}
+
+// ===== ALARM FUNCTIONS =====
+
+void loadAlarms() {
+  Serial.println("Loading alarms from storage...");
+  
+  // Clear existing alarms
+  alarms.clear();
+  
+  // Get number of stored alarms
+  int alarmCount = preferences.getInt("alarmCount", 0);
+  Serial.printf("Found %d alarms\n", alarmCount);
+  
+  // Load each alarm
+  for (int i = 0; i < alarmCount; i++) {
+    String prefix = "alarm" + String(i) + "_";
+    
+    Alarm alarm;
+    alarm.name = preferences.getString(prefix + "name", "Alarm " + String(i+1));
+    alarm.hour = preferences.getInt(prefix + "hour", 0);
+    alarm.minute = preferences.getInt(prefix + "minute", 0);
+    alarm.days = preferences.getUChar(prefix + "days", 0);
+    alarm.type = preferences.getInt(prefix + "type", 0);
+    alarm.enabled = preferences.getBool(prefix + "enabled", true);
+    
+    alarms.push_back(alarm);
+    
+    Serial.printf("Loaded alarm: %s, %02d:%02d, Type: %d, Days: %d, Enabled: %d\n", 
+                  alarm.name.c_str(), alarm.hour, alarm.minute, alarm.type, alarm.days, alarm.enabled);
+  }
+}
+
+void saveAlarms() {
+  Serial.println("Saving alarms to storage...");
+  
+  // Clear previous settings
+  preferences.clear();
+  
+  // Save number of alarms
+  preferences.putInt("alarmCount", alarms.size());
+  
+  // Save each alarm
+  for (size_t i = 0; i < alarms.size(); i++) {
+    String prefix = "alarm" + String(i) + "_";
+    
+    preferences.putString(prefix + "name", alarms[i].name);
+    preferences.putInt(prefix + "hour", alarms[i].hour);
+    preferences.putInt(prefix + "minute", alarms[i].minute);
+    preferences.putUChar(prefix + "days", alarms[i].days);
+    preferences.putInt(prefix + "type", alarms[i].type);
+    preferences.putBool(prefix + "enabled", alarms[i].enabled);
+  }
+  
+  Serial.printf("Saved %d alarms\n", alarms.size());
 }
 
 void checkAlarms() {
-  if (WiFi.status() != WL_CONNECTED) return;
-
-  time_t now = time(nullptr);
-  struct tm timeinfo;
-  localtime_r(&now, &timeinfo);
-
-  File file = SPIFFS.open("/data/alarms.json", "r");
-  if (!file) return;
-
-  DynamicJsonDocument doc(1024);
-  deserializeJson(doc, file);
-  file.close();
-
-  for (JsonObject alarm : doc["alarms"].as<JsonArray>()) {
-    int alarmHour = alarm["time"].as<String>().substring(0, 2).toInt();
-    int alarmMinute = alarm["time"].as<String>().substring(3, 5).toInt();
-
-    if (timeinfo.tm_hour == alarmHour &&
-        timeinfo.tm_min == alarmMinute &&
-        timeinfo.tm_sec == 0) {
-
-      String alarmType = alarm["type"];
-      if (alarmType == "siren") {
-        triggerSiren();
+  if (!timeSet) return;
+  
+  int currentHour = timeinfo.tm_hour;
+  int currentMinute = timeinfo.tm_min;
+  int currentSecond = timeinfo.tm_sec;
+  
+  // Only check when seconds are 0-5 to avoid multiple triggers in the same minute
+  if (currentSecond > 5) return;
+  
+  // Convert day of week to our format (0 = Monday, 6 = Sunday)
+  // tm_wday is (0 = Sunday, 6 = Saturday)
+  int dayIndex = timeinfo.tm_wday == 0 ? 6 : timeinfo.tm_wday - 1;
+  uint8_t dayBit = 1 << dayIndex;
+  
+  Serial.printf("Checking alarms for %02d:%02d on day bit %d\n", currentHour, currentMinute, dayBit);
+  
+  // Check each alarm
+  for (const Alarm& alarm : alarms) {
+    if (alarm.enabled && 
+        alarm.hour == currentHour && 
+        alarm.minute == currentMinute && 
+        (alarm.days & dayBit)) {
+      
+      Serial.printf("Triggering alarm: %s\n", alarm.name.c_str());
+      
+      if (alarm.type == 0) {
+        triggerSiren(DEFAULT_SIREN_DURATION);
       } else {
-        triggerBell();
+        triggerBell(DEFAULT_BELL_DURATION);
       }
-
-      logActivity("Alarm triggered: " + alarm["name"].as<String>(), "info");
     }
   }
 }
 
-void triggerSiren() {
-  digitalWrite(LED_SIREN, HIGH);
-  tone(BUZZER_PIN, 1000, 5000);
-  delay(5000);
-  digitalWrite(LED_SIREN, LOW);
-  updateStatus("siren", "active");
+// ===== HARDWARE CONTROL FUNCTIONS =====
+
+void triggerSiren(int duration) {
+  Serial.printf("Activating siren for %d ms\n", duration);
+  
+  digitalWrite(SIREN_PIN, HIGH);
+  delay(duration);
+  digitalWrite(SIREN_PIN, LOW);
 }
 
-void triggerBell() {
-  digitalWrite(LED_BELL, HIGH);
-  tone(BUZZER_PIN, 800, 3000);
-  delay(3000);
-  digitalWrite(LED_BELL, LOW);
-  updateStatus("bell", "active");
+void triggerBell(int duration) {
+  Serial.printf("Activating bell for %d ms\n", duration);
+  
+  digitalWrite(BELL_PIN, HIGH);
+  delay(duration);
+  digitalWrite(BELL_PIN, LOW);
 }
 
-void updateStatus(String device, String status) {
-  File file = SPIFFS.open("/data/status.json", "r");
-  DynamicJsonDocument doc(256);
-  if (file) {
-    deserializeJson(doc, file);
-    file.close();
+void blinkLED(int times) {
+  for (int i = 0; i < times; i++) {
+    digitalWrite(STATUS_LED_PIN, HIGH);
+    delay(100);
+    digitalWrite(STATUS_LED_PIN, LOW);
+    delay(100);
   }
-
-  doc[device]["status"] = status;
-  doc[device]["lastTriggered"] = time(nullptr);
-
-  file = SPIFFS.open("/data/status.json", "w");
-  serializeJson(doc, file);
-  file.close();
 }
 
-void logActivity(String message, String type) {
-  File file = SPIFFS.open("/data/logs.json", "r");
-  DynamicJsonDocument doc(2048);
-  if (file && file.size() > 0) {
-    deserializeJson(doc, file);
-  }
-  file.close();
+// ===== AUTHENTICATION FUNCTIONS =====
 
-  JsonObject log = doc["logs"].createNestedObject();
-  log["timestamp"] = time(nullptr);
-  log["message"] = message;
-  log["type"] = type;
-
-  file = SPIFFS.open("/data/logs.json", "w");
-  serializeJson(doc, file);
-  file.close();
+String generateTokenForUser(String username) {
+  // Very simple token generation for demo purposes
+  // In production, use a more secure method
+  return username + String(random(100000, 999999));
 }
 
-// ---------------------- API Handlers ----------------------
-
-void handleStatus(AsyncWebServerRequest *request) {
-  DynamicJsonDocument doc(512);
-  doc["wifi"]["connected"] = WiFi.status() == WL_CONNECTED;
-  doc["wifi"]["ssid"] = WiFi.SSID();
-  doc["wifi"]["rssi"] = WiFi.RSSI();
-  doc["wifi"]["ip"] = WiFi.localIP().toString();
-
-  File statusFile = SPIFFS.open("/data/status.json", "r");
-  if (statusFile) {
-    DynamicJsonDocument statusDoc(256);
-    deserializeJson(statusDoc, statusFile);
-    doc["siren"] = statusDoc["siren"];
-    doc["bell"] = statusDoc["bell"];
-    statusFile.close();
-  }
-
-  doc["system"]["uptime"] = millis() / 1000;
-  doc["system"]["freeHeap"] = ESP.getFreeHeap();
-
-  String jsonResponse;
-  serializeJson(doc, jsonResponse);
-  request->send(200, "application/json", jsonResponse);
+bool validateToken(String token) {
+  // This is a simplified validation
+  // In production, implement proper token validation
+  return token.length() > 10;
 }
 
-void handleGetAlarms(AsyncWebServerRequest *request) {
-  File file = SPIFFS.open("/data/alarms.json", "r");
-  if (!file) {
-    request->send(500, "text/plain", "Error reading alarms");
-    return;
-  }
-  request->send(200, "application/json", file.readString());
-  file.close();
-}
-
-void handleAddAlarm(AsyncWebServerRequest *request) {
-  String body = getRequestBody(request);
-  if (body.length() == 0) {
-    request->send(400, "text/plain", "Missing request body");
-    return;
-  }
-
-  DynamicJsonDocument newAlarm(256);
-  DeserializationError error = deserializeJson(newAlarm, body);
-  if (error) {
-    request->send(400, "text/plain", "Invalid JSON: " + String(error.c_str()));
-    return;
-  }
-
-  File file = SPIFFS.open("/data/alarms.json", "r");
-  DynamicJsonDocument doc(1024);
-  if (file && file.size() > 0) {
-    deserializeJson(doc, file);
-  }
-  file.close();
-
-  int newId = 1;
-  for (JsonObject alarm : doc["alarms"].as<JsonArray>()) {
-    if (alarm["id"].as<int>() >= newId) newId = alarm["id"].as<int>() + 1;
-  }
-  newAlarm["id"] = newId;
-  doc["alarms"].add(newAlarm);
-
-  file = SPIFFS.open("/data/alarms.json", "w");
-  serializeJson(doc, file);
-  file.close();
-
-  request->send(200, "application/json", "{\"success\":true}");
-}
-
-void handleRingSiren(AsyncWebServerRequest *request) {
-  triggerSiren();
-  request->send(200, "text/plain", "Siren activated");
-}
-
-void handleRingBell(AsyncWebServerRequest *request) {
-  triggerBell();
-  request->send(200, "text/plain", "Bell activated");
-}
-
-void handleGetLogs(AsyncWebServerRequest *request) {
-  File file = SPIFFS.open("/data/logs.json", "r");
-  if (!file) {
-    request->send(500, "text/plain", "Error reading logs");
-    return;
-  }
-  request->send(200, "application/json", file.readString());
-  file.close();
-}
-
-void handleLogin(AsyncWebServerRequest *request) {
-  String body = getRequestBody(request);
-  DynamicJsonDocument doc(256);
-  deserializeJson(doc, body);
-
-  File file = SPIFFS.open("/data/users.json", "r");
-  DynamicJsonDocument usersDoc(512);
-  deserializeJson(usersDoc, file);
-  file.close();
-
-  for (JsonObject user : usersDoc["users"].as<JsonArray>()) {
-    if (user["username"] == doc["username"] &&
-        user["password"] == doc["password"]) {
-
-      DynamicJsonDocument response(128);
-      response["username"] = user["username"];
-      response["role"] = user["role"];
-
-      String jsonResponse;
-      serializeJson(response, jsonResponse);
-      request->send(200, "application/json", jsonResponse);
-      return;
-    }
-  }
-
-  request->send(401, "text/plain", "Invalid credentials");
-}
+// ===== SERVER SETUP =====
 
 void setupServer() {
-  server.serveStatic("/", SPIFFS, "/www/").setDefaultFile("index.html");
+  // Default route - serve web interface
+  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
+  
+  // API endpoints
+  
+  // Get current time
+  server.on("/api/time", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!timeSet) {
+      request->send(500, "application/json", "{\"error\":\"Time not set\"}");
+      return;
+    }
+    
+    DynamicJsonDocument doc(256);
+    doc["success"] = true;
+    doc["time"] = getTimeString();
+    doc["hour"] = timeinfo.tm_hour;
+    doc["minute"] = timeinfo.tm_min;
+    doc["second"] = timeinfo.tm_sec;
+    doc["day"] = timeinfo.tm_mday;
+    doc["month"] = timeinfo.tm_mon + 1;
+    doc["year"] = timeinfo.tm_year + 1900;
+    doc["weekday"] = timeinfo.tm_wday;
+    
+    String response;
+    serializeJson(doc, response);
+    request->send(200, "application/json", response);
+  });
 
-  server.on("/api/login", HTTP_POST, handleLogin);
-  server.on("/api/status", HTTP_GET, handleStatus);
-  server.on("/api/alarms", HTTP_GET, handleGetAlarms);
-  server.on("/api/alarms", HTTP_POST, handleAddAlarm);
-  server.on("/api/ring-siren", HTTP_POST, handleRingSiren);
-  server.on("/api/ring-bell", HTTP_POST, handleRingBell);
-  server.on("/api/logs", HTTP_GET, handleGetLogs);
+  // Authentication
+  AsyncCallbackJsonWebHandler* loginHandler = new AsyncCallbackJsonWebHandler("/api/login", [](AsyncWebServerRequest *request, JsonVariant &json) {
+    DynamicJsonDocument data(1024);
+    if (json.is<JsonObject>()) {
+      data = json.as<JsonObject>();
+      
+      String username = data["username"];
+      String password = data["password"];
+      
+      // Hardcoded credentials for demo - replace with proper authentication
+      bool isValidUser = 
+        (username == "admin" && password == "admin123") ||
+        (username == "headmaster" && password == "head123") ||
+        (username == "dhmaster" && password == "dh123");
+      
+      if (isValidUser) {
+        DynamicJsonDocument response(256);
+        response["success"] = true;
+        response["token"] = generateTokenForUser(username);
+        response["user"] = username;
+        
+        String responseStr;
+        serializeJson(response, responseStr);
+        request->send(200, "application/json", responseStr);
+      } else {
+        request->send(401, "application/json", "{\"success\":false,\"message\":\"Invalid credentials\"}");
+      }
+    } else {
+      request->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON\"}");
+    }
+  });
+  server.addHandler(loginHandler);
 
-  server.on("/ws", HTTP_GET, [](AsyncWebServerRequest *request) {
-    // WebSocket upgrade handled internally
+  // Get all alarms
+  server.on("/api/alarms", HTTP_GET, [](AsyncWebServerRequest *request) {
+    // Authentication check would go here in production
+    
+    DynamicJsonDocument doc(4096);
+    JsonArray alarmsArray = doc.createNestedArray("alarms");
+    
+    for (size_t i = 0; i < alarms.size(); i++) {
+      JsonObject alarmObj = alarmsArray.createNestedObject();
+      alarmObj["id"] = i;
+      alarmObj["name"] = alarms[i].name;
+      alarmObj["hour"] = alarms[i].hour;
+      alarmObj["minute"] = alarms[i].minute;
+      alarmObj["days"] = alarms[i].days;
+      alarmObj["type"] = alarms[i].type;
+      alarmObj["enabled"] = alarms[i].enabled;
+    }
+    
+    String response;
+    serializeJson(doc, response);
+    request->send(200, "application/json", response);
+  });
+
+  // Add new alarm
+  AsyncCallbackJsonWebHandler* addAlarmHandler = new AsyncCallbackJsonWebHandler("/api/alarms", [](AsyncWebServerRequest *request, JsonVariant &json) {
+    // Authentication check would go here in production
+    
+    DynamicJsonDocument data(1024);
+    if (json.is<JsonObject>()) {
+      data = json.as<JsonObject>();
+      
+      Alarm newAlarm;
+      newAlarm.name = data["name"] | "New Alarm";
+      newAlarm.hour = data["hour"] | 0;
+      newAlarm.minute = data["minute"] | 0;
+      newAlarm.days = data["days"] | 0;
+      newAlarm.type = data["type"] | 0;
+      newAlarm.enabled = data["enabled"] | true;
+      
+      alarms.push_back(newAlarm);
+      saveAlarms();
+      
+      request->send(200, "application/json", "{\"success\":true,\"message\":\"Alarm added\"}");
+    } else {
+      request->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON\"}");
+    }
+  });
+  server.addHandler(addAlarmHandler);
+
+  // Update existing alarm
+  AsyncCallbackJsonWebHandler* updateAlarmHandler = new AsyncCallbackJsonWebHandler("/api/alarms/update", [](AsyncWebServerRequest *request, JsonVariant &json) {
+    // Authentication check would go here in production
+    
+    DynamicJsonDocument data(1024);
+    if (json.is<JsonObject>()) {
+      data = json.as<JsonObject>();
+      
+      int id = data["id"] | -1;
+      if (id >= 0 && id < (int)alarms.size()) {
+        if (data.containsKey("name")) alarms[id].name = data["name"].as<String>();
+        if (data.containsKey("hour")) alarms[id].hour = data["hour"];
+        if (data.containsKey("minute")) alarms[id].minute = data["minute"];
+        if (data.containsKey("days")) alarms[id].days = data["days"];
+        if (data.containsKey("type")) alarms[id].type = data["type"];
+        if (data.containsKey("enabled")) alarms[id].enabled = data["enabled"];
+        
+        saveAlarms();
+        request->send(200, "application/json", "{\"success\":true,\"message\":\"Alarm updated\"}");
+      } else {
+        request->send(404, "application/json", "{\"success\":false,\"message\":\"Alarm not found\"}");
+      }
+    } else {
+      request->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON\"}");
+    }
+  });
+  server.addHandler(updateAlarmHandler);
+
+  // Delete alarm
+  AsyncCallbackJsonWebHandler* deleteAlarmHandler = new AsyncCallbackJsonWebHandler("/api/alarms/delete", [](AsyncWebServerRequest *request, JsonVariant &json) {
+    // Authentication check would go here in production
+    
+    DynamicJsonDocument data(1024);
+    if (json.is<JsonObject>()) {
+      data = json.as<JsonObject>();
+      
+      int id = data["id"] | -1;
+      if (id >= 0 && id < (int)alarms.size()) {
+        alarms.erase(alarms.begin() + id);
+        saveAlarms();
+        request->send(200, "application/json", "{\"success\":true,\"message\":\"Alarm deleted\"}");
+      } else {
+        request->send(404, "application/json", "{\"success\":false,\"message\":\"Alarm not found\"}");
+      }
+    } else {
+      request->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON\"}");
+    }
+  });
+  server.addHandler(deleteAlarmHandler);
+
+  // Trigger siren or bell manually
+  AsyncCallbackJsonWebHandler* triggerHandler = new AsyncCallbackJsonWebHandler("/api/trigger", [](AsyncWebServerRequest *request, JsonVariant &json) {
+    // Authentication check would go here in production
+    
+    DynamicJsonDocument data(1024);
+    if (json.is<JsonObject>()) {
+      data = json.as<JsonObject>();
+      
+      int type = data["type"] | 0;    // 0=siren, 1=bell, 2=emergency
+      int duration = data["duration"] | DEFAULT_SIREN_DURATION;
+      
+      // Limit duration for safety
+      if (duration > 30000) duration = 30000;
+      
+      switch (type) {
+        case 0:  // School siren
+          triggerSiren(duration);
+          break;
+        case 1:  // Dining hall bell
+          triggerBell(duration);
+          break;
+        case 2:  // Emergency (alternating)
+          for (int i = 0; i < 3; i++) {
+            triggerSiren(1000);
+            delay(500);
+            triggerBell(1000);
+            delay(500);
+          }
+          break;
+        default:
+          request->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid type\"}");
+          return;
+      }
+      
+      request->send(200, "application/json", "{\"success\":true,\"message\":\"Trigger activated\"}");
+    } else {
+      request->send(400, "application/json", "{\"success\":false,\"message\":\"Invalid JSON\"}");
+    }
+  });
+  server.addHandler(triggerHandler);
+
+  // System info
+  server.on("/api/system", HTTP_GET, [](AsyncWebServerRequest *request) {
+    DynamicJsonDocument doc(1024);
+    doc["uptime"] = millis() / 1000;
+    doc["ip"] = WiFi.localIP().toString();
+    doc["wifi_ssid"] = WIFI_SSID;
+    doc["wifi_strength"] = WiFi.RSSI();
+    doc["time_sync"] = timeSet;
+    doc["alarm_count"] = alarms.size();
+    doc["free_heap"] = ESP.getFreeHeap();
+    
+    String response;
+    serializeJson(doc, response);
+    request->send(200, "application/json", response);
+  });
+
+  // Fallback for all other routes
+  server.onNotFound([](AsyncWebServerRequest *request) {
+    // Redirect to index for any unknown path
+    request->redirect("/");
   });
 }
 
-// ---------------------- Utility ----------------------
+// ===== UTILITY FUNCTIONS =====
 
-String getRequestBody(AsyncWebServerRequest *request) {
-  String body = "";
-  if (request->hasParam("plain", true)) {
-    body = request->getParam("plain", true)->value();
-  }
-  return body;
+void logMessage(String message) {
+  Serial.println(message);
+  // You could also log to a file on SPIFFS or send to a remote logging service
 }
