@@ -1,16 +1,4 @@
-/*
- * Smart Siren System V2 for Rusununguko ZIMFEP High School
- * Author: Claude
- * Date: May 16, 2025
- * 
- * This code runs on an ESP32 and provides:
- * - WiFi connectivity
- * - Web server with REST API
- * - NTP time synchronization
- * - Scheduled siren/bell control
- * - Manual remote triggering
- * - Persistent alarm storage
- */
+// ======== Smart Siren System V2 for Rusununguko ZIMFEP High School ======== 
 
 #include <WiFi.h>
 #include <AsyncTCP.h>
@@ -24,8 +12,8 @@
 // ===== CONFIGURATION =====
 
 // WiFi credentials
-const char* WIFI_SSID = "Rusununguko_WiFi";     // Replace with school WiFi SSID
-const char* WIFI_PASSWORD = "YourWiFiPassword"; // Replace with school WiFi password
+const char* WIFI_SSID = "Wilson-Note20-Ultra";
+const char* WIFI_PASSWORD = "punisher";
 
 // Time configuration
 const char* NTP_SERVER = "pool.ntp.org";
