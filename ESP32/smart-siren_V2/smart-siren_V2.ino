@@ -93,6 +93,13 @@ void setup() {
   
   // Initialize NTP
   configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER);
+  Serial.println("Waiting for NTP time sync...");
+  struct tm timeinfo;
+  if (!getLocalTime(&timeinfo, 10000)) { // Wait up to 10s
+    Serial.println("Failed to sync time!");
+  } else {
+    Serial.println("Time synchronized: " + String(asctime(&timeinfo)));
+  }
   
   // Setup web server routes
   setupWebServer();
@@ -107,6 +114,14 @@ void setup() {
 // MAIN LOOP
 // ================================
 void loop() {
+  static unsigned long lastMinute = 0;
+  unsigned long now = millis();
+  
+  // Check at start of each minute (60,000ms)
+  if (now - lastMinute >= 60000) {
+    lastMinute = now - (now % 60000); // Align to minute boundary
+    checkScheduledAlarms();
+  }
   server.handleClient();
   
   // Handle active siren
@@ -123,11 +138,15 @@ void loop() {
   }
   
   // Check for scheduled alarms (once per minute)
-  static unsigned long lastAlarmCheck = 0;
-  if (millis() - lastAlarmCheck >= 60000) { // Check every minute
-    checkScheduledAlarms();
-    lastAlarmCheck = millis();
+  static int lastCheckedMinute = -1;
+  struct tm timeinfo;
+  if (getLocalTime(&timeinfo)) {
+    if (timeinfo.tm_min != lastCheckedMinute && timeinfo.tm_sec <= ALARM_CHECK_WINDOW) {
+      lastCheckedMinute = timeinfo.tm_min;
+      checkScheduledAlarms();
+    }
   }
+
   
   delay(50); // Small delay to prevent overwhelming the CPU
 }
@@ -138,6 +157,7 @@ void loop() {
 void connectToWiFi() {
 
   // Setting static IP
+  /*
   IPAddress local_IP(192, 168, 141, 90);
   IPAddress gateway(192, 168, 192, 112);     // Your router's IP
   IPAddress subnet(255, 255, 255, 0);
@@ -145,8 +165,8 @@ void connectToWiFi() {
   IPAddress secondaryDNS(8, 8, 4, 4);
   
   if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
-    Serial.println("STA Failed to configure!");
-  }
+   L Serial.println("STA Failed to configure!");
+  }*/
 
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   Serial.print("Connecting to WiFi...");
