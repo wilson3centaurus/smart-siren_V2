@@ -1,13 +1,80 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>Smart Siren System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-    <h1>login page</h1>
+    <div class="container">
+        <!-- Login Form -->
+        <div id="loginForm" class="login-form">
+            <h2>Smart Siren Login</h2>
+            <input type="text" id="username" placeholder="Username">
+            <input type="password" id="password" placeholder="Password">
+            <button onclick="login()" class="btn-primary">Login</button>
+            <div id="loginError" class="error-message"></div>
+            <div class="login-help">
+                <p><strong>Demo Accounts:</strong></p>
+                <p>Admin: admin / admin123</p>
+                <p>User: user / user123</p>
+            </div>
+        </div>
+        
+        <!-- Main Application -->
+        <div id="mainApp" class="hidden">
+            <div class="header">
+                <h1>Smart Siren Control System</h1>
+                <div class="user-info">
+                    Welcome, <span id="currentUser"></span> | 
+                    <button onclick="logout()" class="btn-danger">Logout</button>
+                </div>
+            </div>
+            
+            <div id="systemStatus" class="status ready">System Ready</div>
+            
+            <div class="control-panel">
+                <h3>Emergency Controls</h3>
+                <div class="button-group">
+                    <button onclick="activateSiren()" class="btn-danger btn-large">🚨 Activate Siren</button>
+                    <button onclick="stopSiren()" class="btn-primary">Stop Siren</button>
+                    <button onclick="activateBell()" class="btn-success">🔔 Ring Bell</button>
+                </div>
+            </div>
+            
+            <div class="schedule-panel">
+                <h3>Schedule Management</h3>
+                <div class="schedule-form">
+                    <div class="form-group">
+                        <label>Time:</label>
+                        <input type="time" id="scheduleTime" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Type:</label>
+                        <select id="scheduleType">
+                            <option value="siren">Siren</option>
+                            <option value="bell">Bell</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Repeat:</label>
+                        <select id="scheduleRepeat">
+                            <option value="once">Once</option>
+                            <option value="daily">Daily</option>
+                            <option value="weekly">Weekly</option>
+                        </select>
+                    </div>
+                    <button onclick="addSchedule()" class="btn-success">Add Schedule</button>
+                </div>
+                
+                <div class="schedules-list">
+                    <h4>Active Schedules</h4>
+                    <div id="schedulesList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/script.js"></script>
 </body>
 </html>
-
-

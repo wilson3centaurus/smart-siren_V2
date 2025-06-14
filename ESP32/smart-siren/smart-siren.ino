@@ -29,6 +29,8 @@ const int STATUS_LED_PIN = 2;           // Built-in status LED
 const int DEFAULT_SIREN_DURATION = 5000;    // Default siren duration (ms)
 const int DEFAULT_BELL_DURATION = 3000;     // Default bell duration (ms)
 
+bool serverStarted = false;
+
 // ===== GLOBAL VARIABLES =====
 
 // Server instance
@@ -57,7 +59,7 @@ struct Alarm {
 std::vector<Alarm> alarms;
 
 // ===== FUNCTION DECLARATIONS =====
-void connectToWiFi();
+//void connectToWiFi();
 void setupServer();
 void setupTime();
 void loadAlarms();
@@ -73,55 +75,59 @@ String generateTokenForUser(String username);
 bool validateToken(String token);
 void logMessage(String message);
 
-// ===== SETUP =====
-
 void setup() {
-  // Initialize serial communication
   Serial.begin(115200);
-  Serial.println("\n\n===== Smart Siren System V2 =====");
-  
-  // Configure pins
+  Serial.println("=== Smart Siren Starting ===");
+
   pinMode(SIREN_PIN, OUTPUT);
   pinMode(BELL_PIN, OUTPUT);
   pinMode(STATUS_LED_PIN, OUTPUT);
-  
-  // Turn off outputs initially
   digitalWrite(SIREN_PIN, LOW);
   digitalWrite(BELL_PIN, LOW);
-  
-  // Initialize SPIFFS file system for web interface files
+
   if (!SPIFFS.begin(true)) {
-    Serial.println("ERROR: SPIFFS mount failed");
+    Serial.println("SPIFFS mount failed");
   } else {
-    Serial.println("SPIFFS mounted successfully");
+    Serial.println("SPIFFS ready");
   }
-  
-  // Initialize preferences (non-volatile storage)
+
   preferences.begin("smart-siren", false);
-  
-  // Connect to WiFi
-  connectToWiFi();
-  
-  // Setup time synchronization
-  setupTime();
-  
-  // Load saved alarms
   loadAlarms();
-  
-  // Configure web server
-  setupServer();
-  
-  // Start the server
-  server.begin();
-  Serial.println("Web server started");
-  
-  // Indicate successful setup
+
+  WiFi.onEvent(WiFiEvent);
+
+  connectToWiFi();
+
   blinkLED(3);
-  Serial.println("Setup complete. System running.");
 }
 
-// ===== MAIN LOOP =====
+void WiFiEvent(WiFiEvent_t event) {
+  switch (event) {
+    case IP_EVENT_STA_GOT_IP:
+      Serial.println("📶 WiFi connected! IP: " + WiFi.localIP().toString());
+      setupTime();
 
+      if (!serverStarted) {
+        setupServer();
+        server.begin();  // ✅ Safe to start now
+        serverStarted = true;
+        Serial.println("🌐 Web server started");
+      }
+      break;
+
+    case WIFI_EVENT_STA_DISCONNECTED:
+      Serial.println("⚠️ WiFi lost. Reconnecting...");
+      WiFi.reconnect();
+      serverStarted = false;
+      break;
+
+    default:
+      break;
+  }
+}
+
+
+// ===== MAIN LOOP =====
 void loop() {
   // Check WiFi connection and reconnect if needed
   if (WiFi.status() != WL_CONNECTED) {
@@ -152,10 +158,9 @@ void loop() {
 }
 
 // ===== WIFI FUNCTIONS =====
-
 void connectToWiFi() {
   Serial.print("Connecting to WiFi...");
-  
+  WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   
   // Wait for connection with timeout
@@ -172,6 +177,10 @@ void connectToWiFi() {
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
     digitalWrite(STATUS_LED_PIN, HIGH); // LED on when connected
+    setupServer();
+    server.begin();  // ✅ Safe to start now
+    serverStarted = true;
+    Serial.println("🌐 Web server started");
   } else {
     Serial.println("\nWiFi connection failed!");
     digitalWrite(STATUS_LED_PIN, LOW);  // LED off when disconnected
@@ -216,7 +225,6 @@ String getDayOfWeek(int day) {
 }
 
 // ===== ALARM FUNCTIONS =====
-
 void loadAlarms() {
   Serial.println("Loading alarms from storage...");
   
@@ -232,12 +240,13 @@ void loadAlarms() {
     String prefix = "alarm" + String(i) + "_";
     
     Alarm alarm;
-    alarm.name = preferences.getString(prefix + "name", "Alarm " + String(i+1));
-    alarm.hour = preferences.getInt(prefix + "hour", 0);
-    alarm.minute = preferences.getInt(prefix + "minute", 0);
-    alarm.days = preferences.getUChar(prefix + "days", 0);
-    alarm.type = preferences.getInt(prefix + "type", 0);
-    alarm.enabled = preferences.getBool(prefix + "enabled", true);
+    // Convert String concatenation to const char* using c_str()
+    alarm.name = preferences.getString((prefix + "name").c_str(), "Alarm " + String(i+1));
+    alarm.hour = preferences.getInt((prefix + "hour").c_str(), 0);
+    alarm.minute = preferences.getInt((prefix + "minute").c_str(), 0);
+    alarm.days = preferences.getUChar((prefix + "days").c_str(), 0);
+    alarm.type = preferences.getInt((prefix + "type").c_str(), 0);
+    alarm.enabled = preferences.getBool((prefix + "enabled").c_str(), true);
     
     alarms.push_back(alarm);
     
@@ -259,12 +268,13 @@ void saveAlarms() {
   for (size_t i = 0; i < alarms.size(); i++) {
     String prefix = "alarm" + String(i) + "_";
     
-    preferences.putString(prefix + "name", alarms[i].name);
-    preferences.putInt(prefix + "hour", alarms[i].hour);
-    preferences.putInt(prefix + "minute", alarms[i].minute);
-    preferences.putUChar(prefix + "days", alarms[i].days);
-    preferences.putInt(prefix + "type", alarms[i].type);
-    preferences.putBool(prefix + "enabled", alarms[i].enabled);
+    // Convert String concatenation to const char* using c_str()
+    preferences.putString((prefix + "name").c_str(), alarms[i].name);
+    preferences.putInt((prefix + "hour").c_str(), alarms[i].hour);
+    preferences.putInt((prefix + "minute").c_str(), alarms[i].minute);
+    preferences.putUChar((prefix + "days").c_str(), alarms[i].days);
+    preferences.putInt((prefix + "type").c_str(), alarms[i].type);
+    preferences.putBool((prefix + "enabled").c_str(), alarms[i].enabled);
   }
   
   Serial.printf("Saved %d alarms\n", alarms.size());
@@ -350,10 +360,10 @@ bool validateToken(String token) {
 
 void setupServer() {
   // Default route - serve web interface
-  server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
+  server.serveStatic("/", SPIFFS, "/").setDefaultFile("main.html");
   
   // API endpoints
-  
+  /*
   // Get current time
   server.on("/api/time", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!timeSet) {
@@ -381,7 +391,8 @@ void setupServer() {
   AsyncCallbackJsonWebHandler* loginHandler = new AsyncCallbackJsonWebHandler("/api/login", [](AsyncWebServerRequest *request, JsonVariant &json) {
     DynamicJsonDocument data(1024);
     if (json.is<JsonObject>()) {
-      data = json.as<JsonObject>();
+      //data = json.as<JsonObject>();
+      data.set(json);
       
       String username = data["username"];
       String password = data["password"];
@@ -439,7 +450,8 @@ void setupServer() {
     
     DynamicJsonDocument data(1024);
     if (json.is<JsonObject>()) {
-      data = json.as<JsonObject>();
+      //data = json.as<JsonObject>();
+      data.set(json);
       
       Alarm newAlarm;
       newAlarm.name = data["name"] | "New Alarm";
@@ -465,7 +477,8 @@ void setupServer() {
     
     DynamicJsonDocument data(1024);
     if (json.is<JsonObject>()) {
-      data = json.as<JsonObject>();
+      //data = json.as<JsonObject>();
+      data.set(json);
       
       int id = data["id"] | -1;
       if (id >= 0 && id < (int)alarms.size()) {
@@ -493,8 +506,8 @@ void setupServer() {
     
     DynamicJsonDocument data(1024);
     if (json.is<JsonObject>()) {
-      data = json.as<JsonObject>();
-      
+      //data = json.as<JsonObject>();
+      data.set(json);
       int id = data["id"] | -1;
       if (id >= 0 && id < (int)alarms.size()) {
         alarms.erase(alarms.begin() + id);
@@ -515,7 +528,8 @@ void setupServer() {
     
     DynamicJsonDocument data(1024);
     if (json.is<JsonObject>()) {
-      data = json.as<JsonObject>();
+      //data = json.as<JsonObject>();
+      data.set(json);
       
       int type = data["type"] | 0;    // 0=siren, 1=bell, 2=emergency
       int duration = data["duration"] | DEFAULT_SIREN_DURATION;
@@ -571,6 +585,7 @@ void setupServer() {
     // Redirect to index for any unknown path
     request->redirect("/");
   });
+*/
 }
 
 // ===== UTILITY FUNCTIONS =====
