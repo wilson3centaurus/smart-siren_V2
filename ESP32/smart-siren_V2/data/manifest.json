@@ -1,0 +1,23 @@
+{
+    "name": "Rusununguko Siren",
+    "short_name": "Rusununguko",
+    "description": "ESP32 Controller Interface",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#000000",
+    "orientation": "portrait",
+    "icons": [
+      {
+        "src": "rusununguko-logo.jpg",
+        "sizes": "192x192",
+        "type": "image/jpg",
+        "purpose": "any maskable"
+      },
+      {
+        "src": "rusununguko-logo.jpg",
+        "sizes": "512x512",
+        "type": "image/jpg"
+      }
+    ]
+  }

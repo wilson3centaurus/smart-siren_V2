@@ -63,6 +63,7 @@ bool servoMovingUp = true;
 // ================================
 void setup() {
   Serial.begin(115200);
+  Serial.println("|============= FOR DEBUGGING =============|");
   Serial.println("Rusununguko High School Smart Siren System Starting...");
   
   // Initialize GPIO pins
@@ -135,8 +136,20 @@ void loop() {
 // WIFI CONNECTION
 // ================================
 void connectToWiFi() {
+
+  // Setting static IP
+  IPAddress local_IP(192, 168, 141, 90);
+  IPAddress gateway(192, 168, 192, 112);     // Your router's IP
+  IPAddress subnet(255, 255, 255, 0);
+  IPAddress primaryDNS(8, 8, 8, 8);
+  IPAddress secondaryDNS(8, 8, 4, 4);
+  
+  if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
+    Serial.println("STA Failed to configure!");
+  }
+
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("Connecting to WiFi");
+  Serial.print("Connecting to WiFi...");
   
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
